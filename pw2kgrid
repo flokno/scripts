@@ -1,0 +1,105 @@
+#! /usr/bin/env python3
+
+from pathlib import Path
+
+import numpy as np
+import typer
+from ase.io import read
+from rich import print as echo
+from typing import Tuple
+
+_nl = "\n"
+_zeros_int = [0, 0, 0]
+_zeros_float = [0.0, 0.0, 0.0]
+ftn_dict = {True: ".true.", False: ".false."}
+
+app = typer.Typer()
+
+
+def get_string(
+    atoms,
+    kgrid,
+    kshift=_zeros_float,
+    q0shift=_zeros_float,
+    fftgrid=_zeros_int,
+    timereversal=False,
+    cartesian=False,
+    octopus=False,
+):
+    """Create the string for WFN.in"""
+    # lattice constants
+    a = atoms.cell.max()
+    out = " ".join(f"{kk:8d}" for kk in kgrid)
+    out += _nl + " ".join(f"{kk:8.5g}" for kk in kshift)
+    out += _nl + " ".join(f"{kk:8.5g}" for kk in q0shift)
+    out += _nl
+    # lattice vectors
+    for vec in atoms.cell:
+        out += _nl + " ".join(f"{xx/a:15.9f}" for xx in vec)
+    # no. of atoms
+    out += _nl + f"{len(atoms):5d}"
+    # positions
+    for number, vec in zip(atoms.numbers, atoms.positions):
+        out += _nl + f"{number:3d} " + " ".join(f"{xx/a:15.9f}" for xx in vec)
+
+    out += _nl + " ".join(f"{nn:5d}" for nn in fftgrid)  # FFT grid
+    out += _nl + f"{ftn_dict[timereversal]}"  # time-reversal symmetry?
+    out += _nl + f"{ftn_dict[cartesian]}"  # kpoints in Cartesian coords?
+    out += _nl + f"{ftn_dict[octopus]}"  # Octopus format?
+
+    return out
+
+
+@app.command()
+def main(
+    file,
+    kgrid: Tuple[int, int, int] = (5, 5, 5),
+    q0shift: Tuple[float, float, float] = (0.0, 0.0, 0.001),
+    fftgrid: Tuple[int, int, int] = (0, 0, 0),
+    timereversal: bool = False,
+    cartesian: bool = False,
+    octopus: bool = False,
+    format: str = "espresso-in",
+):
+    """Convert geometry file into kgrid.x input"""
+    atoms = read(file, format=format)
+
+    echo(f"Write WFN input files for {file} with {kgrid} kgrid")
+
+    # generic kw
+    kw = {
+        "atoms": atoms,
+        "kgrid": kgrid,
+        "fftgrid": fftgrid,
+        "timereversal": timereversal,
+        "cartesian": cartesian,
+        "octopus": octopus,
+    }
+    # WFN.in: 0.5 shift, q0=0
+    outfile = Path("WFN.in")
+    out = get_string(**kw, kshift=[0.5, 0.5, 0.5])
+    echo(f".. write {outfile}")
+    outfile.write_text(out)
+
+    # WFNq.in: 0.5 shift, q0=q0
+    outfile = Path("WFNq.in")
+    out = get_string(**kw, kshift=[0.5, 0.5, 0.5], q0shift=q0shift)
+    echo(f".. write {outfile}")
+    outfile.write_text(out)
+
+    # WFN_co.in: 0.0 shift, q0=0
+    outfile = Path("WFN_co.in")
+    out = get_string(**kw)
+    echo(f".. write {outfile}")
+    outfile.write_text(out)
+
+    # WFNq_co.in: 0.0 shift, q0=q0
+    outfile = Path("WFNq_co.in")
+    out = get_string(**kw, q0shift=q0shift)
+    echo(f".. write {outfile}")
+    outfile.write_text(out)
+
+
+
+if __name__ == "__main__":
+    app()

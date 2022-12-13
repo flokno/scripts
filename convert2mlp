@@ -1,0 +1,82 @@
+#! /usr/bin/env python3
+
+from pathlib import Path
+from typing import List
+
+import numpy as np
+import typer
+from ase.io import read
+from rich import print as echo
+from ase import Atoms
+
+app = typer.Typer()
+
+# new line
+_nl = "\n"
+
+
+def get_block_string(atoms: Atoms, symbols: list):
+    """Create a MLP block for given structure"""
+    out = "BEGIN_CFG" + _nl
+    out += " Size" + _nl + f"{len(atoms)}" + _nl
+    out += " Supercell" + _nl
+    for vec in atoms.cell:
+        out += " ".join(f"{xx:15.9f}" for xx in vec) + _nl
+
+    out += " AtomData:  id type       cartes_x      cartes_y      cartes_z           "
+    out += "fx          fy          fz" + _nl
+
+    for ii, atom in enumerate(atoms):
+        index = list(symbols).index(atom.symbol)
+        out += f"{ii+1:13d} {index:4d}  "
+        out += " ".join(f"{xx:13.6f}" for xx in atom.position)
+        out += ""
+        out += " ".join(f"{xx:13.6f}" for xx in atoms.get_forces()[ii])
+        out += _nl
+
+    out += " Energy" + _nl
+    out += f"{atoms.get_potential_energy():30.10f}" + _nl
+
+    out += (
+        " PlusStress:  xx          yy          zz          yz          xz          xy"
+    )
+    out += _nl
+    stress = atoms.get_stress()
+    if stress is not None:
+        out += " ".join(f"{xx:13.6f}" for xx in -stress * atoms.get_volume())
+    out += _nl
+
+    out += " Feature   EFS_by       VASP" + _nl
+    out += "END_CFG" + _nl
+
+    return out
+
+
+@app.command()
+def main(
+    files: List[Path],
+    format="aims",
+):
+    """Convert configurations in FILES to OUTFILE and print to screen"""
+
+    # first need to get all atoms to count elements correctly
+    atoms_all = []
+    symbols_all = []
+    for file in files:
+        atoms_ = read(file, index=":", format=format)
+        atoms_all += atoms_
+        symbols_all += [list(atoms.symbols) for atoms in atoms_]
+
+    symbols_unique = np.unique(symbols_all)
+
+    # now we can get the blocks for each structure
+    blocks = []
+    for atoms in atoms_all:
+        block = get_block_string(atoms, symbols_unique)
+        blocks.append(block)
+
+    echo(_nl.join(blocks))
+
+
+if __name__ == "__main__":
+    app()

@@ -1,0 +1,85 @@
+#! /usr/bin/env python3
+
+from pathlib import Path
+
+import typer
+from rich import print as echo, panel
+import subprocess as sp
+
+
+ftn_dict = {True: ".true.", False: ".false."}
+
+app = typer.Typer()
+
+
+def get_nbands(file: str = "WFN"):
+    """Get number of bands from `degeneracy_check.x FILE`"""
+    cmd = f"degeneracy_check.x {file}"
+    out = sp.run(cmd.split(), capture_output=True, text=True)
+    # get stuff
+    lines = out.stdout.split("\n")
+    echo(f"Read {file}:")
+    for line in lines[1:4]:
+        echo(line)
+
+    index = next(tpl[0] for tpl in enumerate(lines) if "Note: cannot" in tpl[1])
+
+    allowed_bands = [int(xx) for xx in lines[6:index]]
+    nbands = allowed_bands[-1]
+
+    echo(f"Allowed no. of bands are:     {allowed_bands}")
+    echo(f".. choose nbands:             {nbands}")
+    return nbands
+
+
+@app.command()
+def main(
+    file: Path,
+    file_wfn: Path = "WFN",
+    cutoff: float = 20.0,
+    nbands: int = None,
+    iq0: int = 0,
+    outfile: Path = "epsilon.inp",
+):
+    """Read kgrid and turn into epsilon.out"""
+
+    if nbands is None:
+        echo("Choose `nbands` from degeneracy-allowed numbers:")
+        nbands = get_nbands(file_wfn)
+
+    kpoints = []
+    echo(f"Read info from {file}")
+    with open(file) as f:
+        for line in f:
+            if "K_POINTS" in line:
+                break
+        # next line is no of kpoints
+        nk = int(next(f).strip())
+        for line in f:
+            kk = [float(xx) for xx in line.split()[:3]]
+            kpoints.append(kk)
+
+        assert len(kpoints) == nk, (nk, len(kpoints))
+
+        nl = "\n"
+        out = f"epsilon_cutoff   {cutoff}" + nl
+        out += f"number_bands     {nbands}" + nl
+        out += "begin qpoints" + nl
+
+        for ii, kk in enumerate(kpoints):
+            n = 1.0
+            special = 0
+            if ii == iq0:
+                special = 1
+            out += " ".join(f"{xx:15.8f}" for xx in kk) + f"  {n}  " + f"{special}" + nl
+
+        out += "end"
+
+    echo(f"Write the following to {outfile}:")
+    echo(panel.Panel(out, title=str(outfile), expand=False))
+    open(outfile, "w").write(out)
+    echo(".. done.")
+
+
+if __name__ == "__main__":
+    app()

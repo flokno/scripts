@@ -1,0 +1,134 @@
+#! /usr/bin/env python3
+
+import os
+import shutil
+from pathlib import Path
+
+import numpy as np
+import typer
+from ase.io import read
+from ase.io.espresso import write_espresso_in
+from rich import print as echo
+
+app = typer.Typer()
+
+
+def get_input_data(control: dict, system: dict, electrons: dict):
+    return {"control": control, "system": system, "electrons": electrons}
+
+
+def remove_kpoints(file):
+    """post hoc fix to remove K_POINTS from input file"""
+    # find index of K_POINTS line
+    lines = Path(file).open().readlines()
+    index = next(tpl[0] for tpl in enumerate(lines) if "K_POINTS" in tpl[1])
+    # remove that line plus blank space and write
+    new_lines = lines[: index - 1] + lines[index + 1 :]
+    Path(file).write_text("".join(new_lines))
+
+
+@app.command()
+def main(
+    file,
+    ecutwfc: float = 50.0,
+    nbnd: int = 100,
+    xc: str = "pbe",
+    tprnfor: bool = True,
+    tstress: bool = True,
+    conv_thr: float = 1e-12,
+    diagonalization: str = "david",
+    diago_full_acc: bool = True,
+    prefix: str = "qe",
+    outdir: str = "./",
+    wfcdir: str = "./wfc",
+    pseudodir: str = "./pseudopotentials",
+    format="aims",
+):
+    """Convert geometry file into pw.in template"""
+    atoms = read(file, format=format)
+
+    echo(atoms)
+
+    path_pseudo = Path(os.environ["ESPRESSO_PSEUDO"])
+
+    # copy pseudopoentials in folder and add to dict
+    _folder = Path(pseudodir)
+    _folder.mkdir(exist_ok=True)
+    pseudopotentials = {}
+    for elem in np.unique(atoms.symbols):
+        file = next(path_pseudo.glob(f"{elem}_*PBE-1.2.upf"))
+        # copy
+        _newfile = _folder / file.name
+        echo(f".. copy {file} to {_folder}")
+        shutil.copy(file, _newfile)
+        pseudopotentials[elem] = file.name
+
+    # default control
+    data_control = {
+        "calculation": "scf",
+        "prefix": prefix,
+        "outdir": outdir,
+        "wfcdir": wfcdir,
+        "pseudo_dir": pseudodir,
+        "tprnfor": tprnfor,
+        "tstress": tstress,
+    }
+    # default electrons
+    data_electrons = {
+        "conv_thr": conv_thr,
+        "diagonalization": diagonalization,
+        "diago_full_acc": diago_full_acc,
+    }
+    # system
+    data_system = {
+        "ecutwfc": ecutwfc,
+        "input_dft": xc,
+    }
+
+    # report
+    echo("Will set up following things:")
+    echo("Control:")
+    echo(data_control)
+    echo("System:")
+    echo(data_system)
+    echo("Electrons:")
+    echo(data_electrons)
+
+    # scf
+    outfile = "pw.in.tmp.scf"
+    echo(f".. write {outfile}")
+    with open(outfile, "w") as f:
+        input_data = get_input_data(data_control, data_system, data_electrons)
+        write_espresso_in(
+            f, atoms=atoms, pseudopotentials=pseudopotentials, input_data=input_data
+        )
+    # fix K_POINTS
+    remove_kpoints(outfile)
+
+    # occupied bands
+    outfile = "pw.in.tmp.bands.occ"
+    echo(f".. write {outfile}")
+    data_control["calculation"] = "bands"
+    with open(outfile, "w") as f:
+        input_data = get_input_data(data_control, data_system, data_electrons)
+        write_espresso_in(
+            f, atoms=atoms, pseudopotentials=pseudopotentials, input_data=input_data
+        )
+    # fix K_POINTS
+    remove_kpoints(outfile)
+
+    # occupied + unoccupied bands
+    outfile = "pw.in.tmp.bands.unocc"
+    echo(f".. write {outfile}")
+    data_system["nbnd"] = nbnd
+    with open(outfile, "w") as f:
+        input_data = get_input_data(data_control, data_system, data_electrons)
+        write_espresso_in(
+            f, atoms=atoms, pseudopotentials=pseudopotentials, input_data=input_data
+        )
+    # fix K_POINTS
+    remove_kpoints(outfile)
+
+
+if __name__ == "__main__":
+    app()

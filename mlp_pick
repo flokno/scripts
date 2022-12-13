@@ -1,0 +1,64 @@
+#! /usr/bin/env python3
+
+from pathlib import Path
+
+import numpy as np
+import typer
+from rich import print as echo
+
+app = typer.Typer()
+
+_begin_cfg = "BEGIN_CFG"
+_end_cfg = "\nEND_CFG\n"
+
+
+def get_blocks(file):
+    with open(file) as f:
+        all_blocks = f.read().split(_end_cfg)
+        blocks = [block.strip() + _end_cfg for block in all_blocks if block.strip()]
+
+    assert all([_begin_cfg in block for block in blocks])
+
+    return blocks
+
+
+@app.command()
+def main(
+    file: Path,
+    nsamples: int = 100,
+    file_train: str = "train.cfg",
+    file_test: str = "test.cfg",
+    split: float = 0.2,
+    seed: int = None,
+):
+    """pick NTRAIN samples from FILE and split a fraction of SPLIT for testing"""
+    echo(f"Pick from {file}")
+    echo(f".. seed random state with {seed}")
+
+    np.random.seed(seed)
+
+    blocks = get_blocks(file)
+
+    nblocks = len(blocks)
+
+    ntest = int(np.floor(split * nsamples))
+    ntrain = nsamples - ntest
+    echo(f".. we have {nblocks} blocks, choose {nsamples}")
+    echo(f".. choose {ntrain} for training and {ntest} for testing")
+
+    indices_all = np.arange(nblocks)
+    indices_samples = np.random.choice(indices_all, size=nsamples)
+    indices_train = indices_samples[:ntrain]
+    indices_test = indices_samples[ntrain:]
+
+    echo(f".. write {len(indices_train)} to {file_train}")
+    with open(file_train, "w") as f:
+        f.write("".join(blocks[ii] for ii in indices_train))
+
+    echo(f".. write {len(indices_test)} to {file_test}")
+    with open(file_test, "w") as f:
+        f.write("".join(blocks[ii] for ii in indices_test))
+
+
+if __name__ == "__main__":
+    app()

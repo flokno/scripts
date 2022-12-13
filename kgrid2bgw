@@ -1,0 +1,54 @@
+#! /usr/bin/env python3
+
+from pathlib import Path
+
+import numpy as np
+import typer
+from ase.io import read
+from rich import print as echo
+from typing import Tuple
+
+ftn_dict = {True: ".true.", False: ".false."}
+
+app = typer.Typer()
+
+
+@app.command()
+def main(
+    file: Path,
+    prefix: str = "qe",
+    real: bool = typer.Option(None, "--real/--complex"),
+    wfng_file: str = "WFN",
+    wfng_flag: bool = True,
+    wfng_kgrid: bool = True,
+):
+    """Read kgrid and turn into pw2bgw.in"""
+
+    with open(file) as f:
+        kgrid = np.array([int(xx) for xx in f.readline().split()])
+        kshift = np.array([float(xx) for xx in f.readline().split()])
+        q0shift = np.array([float(xx) for xx in f.readline().split()])
+        dk = kshift + kgrid * q0shift
+
+    nl = "\n"
+    out = "&input_pw2bgw" + nl
+    out += f"  prefix          = '{prefix}'" + nl
+    out += f"  wfng_file       = '{wfng_file}'" + nl
+    if real:
+        out += "  real_or_complex = 1" + nl
+    else:
+        out += "  real_or_complex = 2" + nl
+    out += f"  wfng_flag       = {ftn_dict[wfng_flag]}" + nl
+    out += f"  wfng_kgrid      = {ftn_dict[wfng_kgrid]}" + nl
+
+    for ii in range(3):
+        out += f"  wfng_nk{ii+1:1d}        = {kgrid[ii]}" + nl
+    for ii in range(3):
+        out += f"  wfng_dk{ii+1:1d}        = {dk[ii]}" + nl
+
+    out += "/" + nl
+    echo(out)
+
+
+if __name__ == "__main__":
+    app()

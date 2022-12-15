@@ -20,9 +20,9 @@ def get_input_data(control: dict, system: dict, electrons: dict):
 
 @app.command()
 def main(
-    file,
+    file: str,
+    outfile: str = "pw.in.scf",
     ecutwfc: float = 50.0,
-    nbnd: int = None,
     xc: str = "pbe",
     kpts: Tuple[int, int, int] = [None, None, None],
     kpts_density: float = 5.0,
@@ -33,7 +33,7 @@ def main(
     diago_full_acc: bool = True,
     prefix: str = "qe",
     outdir: str = "./",
-    wfcdir: str = "./wfc",
+    wfcdir: str = None,
     pseudodir: str = "./pseudopotentials",
     format="aims",
 ):
@@ -68,11 +68,13 @@ def main(
         "calculation": "scf",
         "prefix": prefix,
         "outdir": outdir,
-        "wfcdir": wfcdir,
         "pseudo_dir": pseudodir,
         "tprnfor": tprnfor,
         "tstress": tstress,
     }
+    if wfcdir is not None:
+        data_control["wfcdir"] = wfcdir
+
     # default electrons
     data_electrons = {
         "conv_thr": conv_thr,
@@ -95,7 +97,6 @@ def main(
     echo(data_electrons)
 
     # scf
-    outfile = "pw.in.scf"
     echo(f".. write {outfile}")
     with open(outfile, "w") as f:
         input_data = get_input_data(data_control, data_system, data_electrons)

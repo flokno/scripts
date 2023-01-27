@@ -1,0 +1,73 @@
+#! /usr/bin/env python3
+
+from pathlib import Path
+
+import typer
+from effmass import extrema, inputs, outputs
+from matplotlib import pyplot as plt
+from rich import print as echo
+import pandas as pd
+
+
+def make_dataframe(segments):
+    rows = []
+
+    for segment in segments:
+        data = {
+            "particle": segment.band_type,
+            "bandindex": segment.band,
+            "direction": segment.direction,
+            "eff_mass_lstsq": segment.five_point_leastsq_effmass(),
+            "eff_mass_fd": segment.finite_difference_effmass(),
+        }
+        rows.append(data)
+
+    return pd.DataFrame(rows)
+
+
+app = typer.Typer()
+
+
+@app.command()
+def main(
+    file: Path,
+    extrema_search_depth: float = 0.075,
+    energy_range: float = 0.25,
+    plot: bool = False,
+    save: bool = False,
+):
+    """effmass summary for folder"""
+    folder = file.parent
+    output_name = file.name
+
+    echo(f"Read {output_name} from {folder}")
+    data = inputs.DataAims(folder, output_name=output_name)
+
+    echo(f".. extrema_search_depth: {extrema_search_depth}")
+    echo(f".. energy_range:         {energy_range}")
+
+    settings = inputs.Settings(
+        extrema_search_depth=extrema_search_depth, energy_range=energy_range
+    )
+
+    segments = extrema.generate_segments(settings, data)
+
+    table = outputs.make_table(segments)
+    echo(table)
+
+    if save:
+        outfile = folder / "effmass_summary.csv"
+        echo(f".. save segements as dataframe to {outfile}")
+        df = make_dataframe(segments=segments)
+        df.to_csv(outfile)
+
+    if plot:
+        outfile = folder / "effmass_summary.pdf"
+        outputs.plot_segments(data, settings, segments)
+
+        echo(f".. save plot to {outfile}")
+        plt.savefig(outfile)
+
+
+if __name__ == "__main__":
+    app()

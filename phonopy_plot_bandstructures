@@ -1,0 +1,93 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+
+import yaml
+from pathlib import Path
+
+import numpy as np
+import typer
+from rich import print as echo
+from typing import List
+from matplotlib import pyplot as plt
+
+
+def read_band_yaml(filename):
+    data = yaml.safe_load(open(filename))  # , Loader=yaml.CLoader)
+    frequencies = []
+    distances = []
+    labels = []
+    for j, v in enumerate(data["phonon"]):
+        if "label" in v:
+            labels.append(v["label"])
+        else:
+            labels = None
+        frequencies.append([f["frequency"] for f in v["band"]])
+        distances.append(v["distance"])
+
+    if labels is None:
+        labels = [l[0] for l in data["labels"]]
+        labels.append(data["labels"][-1][-1])
+
+    new_labels = []
+    for label in labels:
+        new_labels.append(label.replace(r"\mathsf", ""))
+    labels = new_labels
+
+    xticks = [distances[ii * n] for ii, n in enumerate(data["segment_nqpoint"])]
+    xticks.append(distances[-1])
+
+    return {
+        "distances": np.array(distances),
+        "frequencies": np.array(frequencies),
+        "segment_nqpoint": data["segment_nqpoint"],
+        "xticks": np.array(xticks),
+        "labels": labels,
+    }
+
+
+app = typer.Typer(pretty_exceptions_show_locals=False)
+
+
+@app.command()
+def main(
+    files: List[Path],
+    outfile: Path = "bandstructure.pdf",
+    legend: str = typer.Option(None, help="Give legend entries as `label1,label2`"),
+):
+    echo(files)
+
+    colors = ["#313131", "C3", "C0", "C1", "C2"]
+
+    if legend is None:
+        _legend = [str(file) for file in files]
+    else:
+        _legend = legend.split(",")
+        assert len(files) == len(_legend)
+
+    legend = []
+    fig, ax = plt.subplots()
+    for ii, file in enumerate(files):
+        (distances, frequencies, segment_nqpoint, xticks, labels) = read_band_yaml(
+            file
+        ).values()
+
+        x = distances
+        y = frequencies
+
+        ax.plot(x, y, color=colors[ii])
+
+        echo(y.shape)
+        legend += [_legend[ii]]
+        legend += (y.shape[1] - 1) * ("_",)
+
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel("Frequency (THz)")
+    ax.legend(legend)
+
+    fig.savefig(outfile)
+
+
+if __name__ == "__main__":
+    app()

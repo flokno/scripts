@@ -1,0 +1,121 @@
+#! /usr/bin/env python3
+
+from pathlib import Path
+
+import typer
+from rich import print as echo
+from stepson import Trajectory
+import pandas as pd
+from matplotlib import pyplot as plt
+import numpy as np
+from ase.units import GPa
+
+
+def _plot(dataframe: pd.DataFrame, figsize=(8.27, 11.69)):
+    df = dataframe
+    fig, axs = plt.subplots(nrows=len(df.columns), sharex=True, figsize=figsize)
+
+    for ax, col in zip(axs, df):
+        s = df[col]
+        s.plot(ax=ax, lw=1, marker=".", color="#313131", alpha=0.8)
+        ax.axhline(s.mean(), lw=2, color="#313131")
+        s.expanding(min_periods=1).mean().plot(ax=ax, color="C3")
+        ax.set_title(col)
+
+    ax.set_xlabel("Time")
+
+    return fig
+
+
+app = typer.Typer(pretty_exceptions_show_locals=False)
+
+
+@app.command()
+def main(
+    folder: Path,
+    nmax: int = -1,
+    stride: int = None,
+    nsteps: int = 301,
+    threshold: float = 1e4,
+    outfile: Path = None,
+    plot: bool = False,
+):
+    """Read stepson trajectory from FOLDER and create statistics"""
+    echo(f"Read {folder}")
+
+    trajectory = Trajectory(folder)
+
+    echo("Data:")
+    echo(trajectory.data)
+    echo()
+
+    # estimate stride
+    length = len(trajectory.positions[:nmax])
+    if stride is None:
+        stride = int(length / nsteps)
+    else:
+        nsteps = int(length / stride)
+    echo(f"... max. steps:        {nmax}")
+    echo(f"... trajectory length: {length}")
+    echo(f"... number of steps:   {nsteps}")
+    echo(f"--> stride:            {stride}")
+
+    temperature = trajectory.temperature[:nmax:stride].compute()
+    # pressure = trajectory.pressure[:nmax:stride].compute()
+    stress = trajectory.stress_potential[:nmax:stride]
+    pressure = (stress[:, 0, 0] + stress[:, 1, 1] + stress[:, 2, 2]) / 3 / GPa
+    del stress
+
+    e_kin = trajectory.energy_kinetic[:nmax:stride].compute()
+    e_pot = trajectory.energy_potential[:nmax:stride].compute()
+
+    # remove threshold
+    e_kin[abs(e_kin) > threshold] = np.nan
+    temperature[abs(temperature) > threshold] = np.nan
+
+    # displacements
+    # displacements = trajectory.displacements[:nmax:stride].std(axis=(1, 2)).compute()
+    _slice = trajectory.displacements[:nmax:stride]
+    displacements_std = _slice.std(axis=(1, 2)).compute()
+    displacements_max = abs(_slice).max(axis=(1, 2)).compute()
+    # displacements_std = np.std(displacements, axis=(1, 2))
+    # displacements_mean = np.mean(displacements, axis=(1, 2))
+
+    # momenta
+    momenta = trajectory.momenta[:nmax:stride].compute()
+    momentum_com = momenta.sum(axis=1).mean(axis=1)
+    del momenta
+
+    data = {
+        "temperature": temperature,
+        "pressure": pressure,
+        # "energy_kinetic": e_kin,
+        "energy_potential": e_pot,
+        "energy_total": e_kin + e_pot,
+        "displacements_std": displacements_std,
+        "displacements_max": displacements_max,
+        # "displacements_mean": displacements_mean,
+        "momentum_com": momentum_com,
+    }
+
+    df = pd.DataFrame(data, index=trajectory.data.time[:nmax:stride])
+
+    echo("... Dataframe:")
+    echo(df)
+
+    if outfile is None:
+        outfile = folder.name + "_summary.csv"
+
+    echo(f"... save data to {outfile}")
+    df.to_csv(outfile, index="time")
+
+    if plot:
+        fig = _plot(df)
+
+        outfile = Path(outfile).stem + "_plot.pdf"
+        echo(f"... save plot to {outfile}")
+        fig.savefig(outfile)
+
+
+if __name__ == "__main__":
+    app()

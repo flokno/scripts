@@ -35,7 +35,7 @@ def main(
     folder: Path,
     nmax: int = -1,
     stride: int = None,
-    nsteps: int = 301,
+    nsteps: int = 501,
     threshold: float = 1e4,
     outfile: Path = None,
     plot: bool = False,
@@ -50,7 +50,7 @@ def main(
     echo()
 
     # estimate stride
-    length = len(trajectory.data.positions[:nmax])
+    length = len(trajectory.data.positions[:nmax]) + 1
     if stride is None:
         stride = int(length / nsteps)
     else:

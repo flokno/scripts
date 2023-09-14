@@ -21,7 +21,7 @@ def get_input_data(control: dict, system: dict, electrons: dict):
 @app.command()
 def main(
     file: str,
-    outfile: str = "pw.in.scf",
+    outfile: str = "pw.in",
     calculation: str = "scf",
     ecutwfc: float = 50.0,
     xc: str = "pbe",
@@ -33,7 +33,7 @@ def main(
     diagonalization: str = "david",
     diago_full_acc: bool = True,
     prefix: str = "qe",
-    outdir: str = "./",
+    outdir: str = "work",
     wfcdir: str = None,
     pseudodir: str = "./pseudopotentials",
     format="aims",

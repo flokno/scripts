@@ -23,7 +23,7 @@ def main(
     file: str,
     outfile: str = "pw.in",
     calculation: str = "scf",
-    ecutwfc: float = 50.0,
+    ecutwfc: float = 75.0,
     xc: str = "pbe",
     kpts: Tuple[int, int, int] = [None, None, None],
     kpts_density: float = 5.0,

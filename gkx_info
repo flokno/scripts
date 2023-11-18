@@ -2,13 +2,13 @@
 
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import typer
+from ase.units import GPa
+from matplotlib import pyplot as plt
 from rich import print as echo
 from stepson import Trajectory
-import pandas as pd
-from matplotlib import pyplot as plt
-import numpy as np
-from ase.units import GPa
 
 
 def _plot(dataframe: pd.DataFrame, figsize=(8.27, 11.69)):

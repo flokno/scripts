@@ -1,0 +1,42 @@
+#! /usr/bin/env python3
+
+import json
+import shlex
+import subprocess as sp
+from pathlib import Path
+
+import typer
+from rich import print as echo
+
+app = typer.Typer(pretty_exceptions_show_locals=False)
+
+
+@app.command()
+def main(
+    file: Path,
+    metadata_key: str = "metadata",
+    cell_key: str = "cells",
+    execution_key: str = "execution",
+    indent: int = 1,
+):
+    echo(f"Read '{file}'")
+
+    _cmd = f"jupyter nbconvert --inplace --execute {file}"
+
+    echo(f'.. execute: "{_cmd}"')
+
+    sp.run(shlex.split(_cmd))  # , stdout=sp.STDOUT)
+
+    data_nb = json.load(open(file))
+
+    echo(f"... clear '{execution_key}' in cell metadata")
+    for ii, data_cell in enumerate(data_nb[cell_key]):
+        if execution_key in data_cell[metadata_key]:
+            del data_nb[cell_key][ii][metadata_key][execution_key]
+
+    echo(f"... write to {file}")
+    json.dump(data_nb, open(file, "w"), indent=indent)
+
+
+if __name__ == "__main__":
+    app()

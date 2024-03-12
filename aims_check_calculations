@@ -1,0 +1,133 @@
+#! /usr/bin/env python
+from argparse import ArgumentParser as argpars
+import os
+import numpy as np
+import shutil
+from subprocess import call
+
+# Welche Datei oeffnen?
+parser = argpars(description='Checks collections of aims runs ended or not')
+parser.add_argument('aimsouts' , type=str  , nargs='+', help='aims output files')
+parser.add_argument('--only', type=str , help='Show only (finished, unfinished) jobs')
+parser.add_argument('-s', '--steps', action='store_false' , help='Show number of scf steps')
+parser.add_argument('-t', '--time', action='store_true' , help='Show total time')
+parser.add_argument('-v', '--verbose', action='store_true' , help='verbose')
+parser.add_argument('-r', '--resub', nargs='?', type=str, const='run.job', default=None, help='resubmit job')
+args = parser.parse_args()
+
+# print('\nCheck wether aims run ended (succesfully)\n')
+
+def print_status(fil, status, steps=None, time=None):
+    if status == 1:
+        status_str = 'calculation finished'
+    elif status == 0:
+        status_str = 'calculation NOT finished'
+    elif status == 2:
+        status_str = 'calculation NOT finished and REsubmitted'
+    elif status == -1:
+        status_str = 'calculation not started'
+    elif status == -2:
+        status_str = 'calculation not started and submitted'
+
+    print(" File: {:20s}\n   Status      : {:20s}".format(fil, status_str))
+    if steps:
+        print("   scf-steps   : {:d}".format(steps[-1]))
+    if time:
+        print("   Total time  : {:f}s".format(time))
+
+# scf steps counter
+if args.steps:
+    steps = []
+else:
+    steps = None
+time = None
+counter_files = 0
+counter_finished = 0
+counter_unfinished = 0
+counter_resub = 0
+for fil in args.aimsouts:
+    try:
+        lines = open(fil, 'r').readlines()
+        counter_files += 1
+        if 'Have a nice day.' in ''.join(lines[-3:]):
+            status = 1
+            counter_finished += 1
+            #
+            if args.steps:
+                for ll in lines[-50:]:
+                    if 'Number of self-consistency cycles ' in ll:
+                        steps.append(int(ll.split()[6]))
+            #
+            if args.time:
+                for ll in lines[-50:]:
+                    if 'Total time             ' in ll:
+                        time=float(ll.split()[4])
+            #
+        #
+        else:
+            status = 0
+            counter_unfinished += 1
+            steps.append(-1)
+            #
+            # resub only unfinished jobs!
+            if args.resub:
+                path = os.path.join(*tuple(fil.split('/')[:-1]))
+                # archive previous file
+                shutil.copy(fil, fil + '.old')
+                output   = call('sbatch  {:s} {:s}'.format(args.resub, path), shell=True)
+                counter_resub += 1
+                status   = 2
+        #
+    #
+    except IOError:
+        status = -1
+        #if args.resub:
+        #    path = os.path.join(*tuple(fil.split('/')[:-1]))
+        #    output = call('sbatch  {:s} {:s}'.format(args.resub, path), shell=True)
+        #    status = -2
+    #
+    except IndexError:
+        print('IndexError in file {}'.format(fil))
+        if args.resub:
+            path = os.path.join(*tuple(fil.split('/')[:-1]))
+            output = call('sbatch  {:s} {:s}'.format(args.resub, path), shell=True)
+            status = -2
+        #
+        else:
+            exit()
+    #
+    # print feedback
+    if not args.verbose or (args.only and ('unfinished' in args.only.lower())):
+        if (status == 0) or (status == -1):
+            print_status(fil, status)
+    #
+    else:
+        print_status(fil, status, steps, time)
+    #
+
+# Final feedback
+print( 'Checked {} files.'.format(counter_files))
+print(f'  Finished:   {counter_finished}')
+print(f'  Unfinished: {counter_unfinished}')
+if counter_files == 0:
+    exit()
+if args.steps:
+    steps = np.array(steps)
+    if steps.size == 0:
+        avg_steps = float('nan')
+        max_steps = float('nan')
+    else:
+        avg_steps = steps[steps > 1].sum() / max(1, steps[steps > 1].size)
+        min_steps = int(steps.min())
+        max_steps = int(steps.max())
+    print(f'  Average number of scf cycles:  {avg_steps:.2f}')
+    print(f'  Minimum number of scf cycles:  {min_steps:3d}')
+    print(f'  Maximum number of scf cycles:  {max_steps:3d}')
+    iis = np.where(steps > 1.1 * avg_steps)[0]
+    if len(iis) > 0:
+        print(f'Files with more than 10% above the average no of steps:')
+        for ii in iis:
+          print(f'  {args.aimsouts[ii]} \n  {steps[ii]:5d} scf cycles')
+if args.resub:
+    print('Resubmitted {} calculations.'.format(counter_resub))
+

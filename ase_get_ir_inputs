@@ -1,0 +1,87 @@
+#! /usr/bin/env python3
+
+from pathlib import Path
+from typing import List
+
+import typer
+from rich import print as echo
+from rich.progress import track
+
+
+app = typer.Typer(pretty_exceptions_show_locals=False)
+
+
+@app.command()
+def main(
+    files: List[Path],
+    file_reference: Path = "geometry.in",
+    outfile_forces: str = "outfile_forces.dat",
+    outfile_dipoles: str = "outfile_dipoles.dat",
+    outfile_displacements: str = "outfile_displacements.dat",
+    fmt="%20.10e",
+    decimals: int = 10,
+    format_in: str = None,
+    format_out: str = None,
+):
+    """Get forces, dipoles, and displacements from DFT output files
+
+    Args:
+        files: DFT output files with dipoles
+        file_reference: reference structure
+        outfile_forces: output file for forces
+        outfile_dipoles: output file for dipoles
+        outfile_displacements: output file for displacements
+        fmt: format for array output
+        decimals: round to this number of decimals
+        format_in: ASE input file format
+        format_out: ASE output file format
+    """
+    from ase import __version__ as ase_version
+    from ase.io import read
+    import numpy as np
+
+    assert int(ase_version.split(".")[1]) >= 23, "ASE >= 3.23 required!"
+
+    echo(f"Input files: {files}")
+
+    echo(f'Reading reference structure from "{file_reference}"')
+    atoms_reference = read(file_reference, format=format_in)
+    echo(f"... {atoms_reference}")
+
+    forces = []
+    dipoles = []
+    displacements = []
+
+    for file in track(files, description="Processing files"):
+        _atoms = read(file, format=format_out)
+
+        f = _atoms.get_forces()
+        p = _atoms.get_dipole_moment()
+        d = _atoms.get_positions() - atoms_reference.get_positions()
+
+        forces.append(f)
+        dipoles.append(p)
+        displacements.append(d)
+
+    forces = np.array(forces).round(decimals)
+    dipoles = np.array(dipoles).round(decimals)
+    displacements = np.array(displacements).round(decimals)
+
+    echo(f'... write forces to        "{outfile_forces}"')
+    _header = " ".join([str(x) for x in forces.shape])
+    _array = forces.reshape(-1, 3)
+    np.savetxt(outfile_forces, _array, fmt=fmt, header=_header)
+
+    echo(f'... write dipoles to       "{outfile_dipoles}"')
+    _header = " ".join([str(x) for x in dipoles.shape])
+    _array = dipoles.reshape(-1, 3)
+    np.savetxt(outfile_dipoles, _array, fmt=fmt, header=_header)
+
+    echo(f'... write displacements to "{outfile_displacements}"')
+    _header = " ".join([str(x) for x in displacements.shape])
+    _array = displacements.reshape(-1, 3)
+    np.savetxt(outfile_displacements, _array, fmt=fmt, header=_header)
+
+
+if __name__ == "__main__":
+    app()

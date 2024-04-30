@@ -1,0 +1,47 @@
+#! /usr/bin/env python3
+
+import shlex
+import subprocess as sp
+from pathlib import Path
+
+import typer
+from rich import print as echo
+
+
+app = typer.Typer(pretty_exceptions_show_locals=False)
+
+
+@app.command()
+def main(
+    path: Path,
+    root_local: Path = "/Users/flokno/working/projects",
+    root_remote: Path = "/cfs/klemming/home/f/flokno/projects",
+    scp_host: str = "dardel",
+):
+    # get path relative to root_local
+
+    n_local = len(root_local.parts)
+
+    # make sure we're in the project directory
+    assert path.absolute().parts[:n_local] == root_local.parts
+
+    path_on_dardel = root_remote.joinpath(*path.absolute().parts[n_local:])
+
+    echo(f'Copy "{path}" to "{scp_host}:{path_on_dardel.parent}"')
+
+    # make sure parent exists
+    echo(f"... make sure parent exists on {scp_host}")
+    _cmd = f"ssh {scp_host} mkdir -p {path_on_dardel.parent}"
+    sp.run(shlex.split(_cmd), check=True)
+
+    # copy path
+    echo(f"... copy '{path}'")
+    _cmd = f"scp -r {path} {scp_host}:{path_on_dardel.parent}"
+    sp.run(shlex.split(_cmd), check=True)
+
+    echo()
+    echo(f"Check {scp_host}:{path_on_dardel.parent}/{path.name}")
+
+
+if __name__ == "__main__":
+    app()

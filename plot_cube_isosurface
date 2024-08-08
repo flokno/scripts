@@ -1,0 +1,142 @@
+#! /usr/bin/env python3
+"""plot density isosurface"""
+
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import typer
+from ase import units
+from ase.io.cube import read_cube
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from skimage import measure as sm
+from rich import print as echo
+
+_factor = 1e20 / units.C
+
+
+def circular_mean(X: np.array, weights: np.array = None, map_to_origin: bool = False):
+    """Compute circular mean for array X
+
+    Args:
+        X: values on [0, 1) of shape [N, D], N: no. of points, D: dimension
+        weights: weight of each point
+
+    Returns:
+        X_mean: Circular mean of X
+    """
+    x_sin = np.sin(X * 2 * np.pi)
+    x_cos = np.cos(X * 2 * np.pi)
+
+    if weights is not None:
+        x_sin_weight = x_sin * weights[:, None] / weights.sum()
+        x_cos_weight = x_cos * weights[:, None] / weights.sum()
+    else:
+        x_sin_weight = x_sin
+        x_cos_weight = x_cos
+
+    x_sin_sum = x_sin_weight.sum(axis=0)
+    x_cos_sum = x_cos_weight.sum(axis=0)
+
+    X = (np.arctan2(-x_sin_sum, -x_cos_sum) + np.pi) / 2 / np.pi
+
+    if map_to_origin:
+        X = (X + 0.5) % 1 - 0.5
+
+    return X
+
+
+app = typer.Typer(pretty_exceptions_show_locals=False)
+
+
+@app.command()
+def main(
+    file: Path,
+    level: float = 0.3,
+    stride: int = 10,
+    dry: bool = False,
+    outfile: Path = None,
+    alpha: float = 0.2,
+    elevation: float = 10,
+    azimuth: float = 185,
+    roll: float = 0,
+):
+    """read (aims) output file and compute ionic polarization"""
+    echo(f"Read {file}")
+    cube_data = read_cube(open(file))
+    atoms = cube_data["atoms"]
+    cube = cube_data["data"]
+    origin = cube_data["origin"]
+
+    n1, n2, n3 = cube.shape
+    # grid = 2 * np.pi * np.mgrid[0 : 1 : n1 * 1j, 0 : 1 : n2 * 1j, 0 : 1 : n3 * 1j]
+
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    ax.view_init(elev=elevation, azim=azimuth, roll=roll)
+
+    # positive
+    if np.any(cube > 0):
+        verts, faces, normals, values = sm.marching_cubes(cube, level, step_size=stride)
+        mesh = Poly3DCollection(verts[faces], alpha=alpha, color="C0")
+        ax.add_collection3d(mesh)
+
+    # negative
+    if np.any(cube < 0):
+        verts, faces, normals, values = sm.marching_cubes(cube, -level, step_size=stride)
+        mesh = Poly3DCollection(verts[faces], alpha=alpha, color="C3")
+        ax.add_collection3d(mesh)
+
+    ax.set_xlim(0, n1)  # a = 6 (times two for 2nd ellipsoid)
+    ax.set_ylim(0, n2)  # b = 10
+    ax.set_zlim(0, n3)  # c = 16
+
+    M = atoms.get_masses()
+    F = atoms.get_scaled_positions(wrap=False)
+    atom_labels = atoms.get_chemical_symbols()
+
+    kw = {"marker": "D", "color": "k"}
+    for ii, pos in enumerate(F):
+        ax.scatter3D(*pos * n1, **kw)
+        ax.text(*pos * n1, atom_labels[ii], fontsize=8, ha="center", va="bottom")
+
+    echo("Origin")
+    echo(origin)
+
+    echo("Scaled positions:")
+    echo(F)
+    echo("Masses:")
+    echo(M)
+
+    # circular mean
+    X = circular_mean(F, weights=M, map_to_origin=False)
+    kw = {"marker": "s", "color": "r"}
+    ax.scatter3D(*X * n1, **kw)
+    echo("circular centroid position:")
+    echo(circular_mean(F))
+    echo("circular center of mass:")
+    echo(X)
+    echo("circular center of mass (Cartesian):")
+    echo(atoms.cell.cartesian_positions(X))
+
+    # naive mean
+    R = (F * M[:, None]).sum(axis=0) / sum(M)
+    kw = {"marker": "d", "color": "b"}
+    ax.scatter3D(*R * n1, **kw)
+    echo("naive center of mass:")
+    echo(R)
+    echo("naive center of mass (Cartesian):")
+    echo(atoms.cell.cartesian_positions(R))
+
+    if not dry:
+        fig.tight_layout()
+
+        if outfile is None:
+            echo("... show plot")
+            plt.show()
+        else:
+            echo(f"... save to {outfile}")
+            fig.savefig(outfile)
+
+
+if __name__ == "__main__":
+    app()

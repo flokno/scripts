@@ -32,6 +32,7 @@ def main(
     conv_thr: float = 1e-12,
     diagonalization: str = "david",
     diago_full_acc: bool = True,
+    mixing_beta: float = 0.7,
     prefix: str = "qe",
     outdir: str = "work",
     wfcdir: str = None,
@@ -81,6 +82,7 @@ def main(
         "conv_thr": conv_thr,
         "diagonalization": diagonalization,
         "diago_full_acc": diago_full_acc,
+        "mixing_beta": mixing_beta,
     }
     # system
     data_system = {

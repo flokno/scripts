@@ -1,0 +1,54 @@
+#! /usr/bin/env python3
+
+import shlex
+import subprocess as sp
+from pathlib import Path
+from typing import List
+
+import typer
+from rich import print as echo
+
+
+def scp_file(path, root_local, root_remote, scp_host):
+    """scp one file to remote host"""
+    n_local = len(root_local.parts)
+
+    # make sure we're in the project directory
+    assert path.absolute().parts[:n_local] == root_local.parts
+
+    path_on_dardel = root_remote.joinpath(*path.absolute().parts[n_local:])
+
+    # echo(f'... copy "{path}" to "{scp_host}:{path_on_dardel.parent}"')
+
+    # make sure parent exists
+    echo(f"... make sure {path_on_dardel.parent} exists on '{scp_host}'")
+    _cmd = f"ssh {scp_host} mkdir -p '{path_on_dardel.parent}'"
+    sp.run(shlex.split(_cmd), check=True)
+
+    # copy path
+    echo(f"... copy '{path}'")
+    _cmd = f"scp -r {path} {scp_host}:{path_on_dardel.parent}"
+    sp.run(shlex.split(_cmd), check=True)
+
+    echo(f"--> check {scp_host}:{path_on_dardel.parent}/{path.name}")
+
+
+app = typer.Typer(pretty_exceptions_show_locals=False)
+
+
+@app.command()
+def main(
+    paths: List[Path],
+    root_local: Path = "/Users/flokno/working/projects",
+    root_remote: Path = "/cephyr/users/knoopf/Alvis/projects",
+    scp_host: str = "alvis2",
+):
+    # get path relative to root_local
+    echo(f"Copy these paths: {paths}")
+
+    for path in paths:
+        scp_file(path, root_local, root_remote, scp_host)
+
+
+if __name__ == "__main__":
+    app()

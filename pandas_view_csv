@@ -1,0 +1,25 @@
+#! /usr/bin/env python3
+
+from pathlib import Path
+
+import pandas as pd
+import typer
+from rich import panel
+from rich import print as echo
+
+app = typer.Typer(pretty_exceptions_show_locals=False)
+
+
+@app.command()
+def main(
+    file: Path,
+):
+
+    df = pd.read_csv(file)
+
+    rep = df.to_string()
+    echo(panel.Panel(rep, title=str(file), expand=False))
+
+
+if __name__ == "__main__":
+    app()

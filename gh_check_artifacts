@@ -1,0 +1,89 @@
+#! /usr/bin/env python3
+
+import typer
+import subprocess
+import json
+from typing import Optional
+from pathlib import Path
+from rich import print as echo
+
+app = typer.Typer(pretty_exceptions_show_locals=False)
+
+
+def get_artifacts(owner: str, repo: str) -> dict:
+    cmd = [
+        "gh",
+        "api",
+        "-H",
+        "Accept: application/vnd.github+json",
+        "-H",
+        "X-GitHub-Api-Version: 2022-11-28",
+        f"/repos/{owner}/{repo}/actions/artifacts",
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    result.check_returncode()
+    return json.loads(result.stdout)
+
+
+def delete_artifact(owner: str, repo: str, artifact_id: int) -> None:
+    cmd = [
+        "gh",
+        "api",
+        "--method",
+        "DELETE",
+        "-H",
+        "Accept: application/vnd.github+json",
+        "-H",
+        "X-GitHub-Api-Version: 2022-11-28",
+        f"/repos/{owner}/{repo}/actions/artifacts/{artifact_id}",
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    result.check_returncode()
+
+
+def check_size(result: dict) -> float:
+    """Return total size of artifacts in Bytes"""
+    n_bytes_total = 0
+    for element in result["artifacts"]:
+        n_bytes_total += element["size_in_bytes"]
+
+    return n_bytes_total
+
+
+@app.command()
+def main(
+    owner: str = typer.Argument(..., help="Repository owner"),
+    repo: str = typer.Argument(..., help="Repository name"),
+    output: Optional[Path] = typer.Option(None, help="Output file (default: stdout)"),
+    delete: bool = False,
+    verbose: bool = False,
+):
+    """Fetch GitHub Actions artifacts using gh CLI"""
+    try:
+        result = get_artifacts(owner, repo)
+
+    except subprocess.CalledProcessError as e:
+        typer.secho(f"Error: {e.stderr}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    echo(f"... number of artifacts: ", result["total_count"])
+    echo(f"... total size = {check_size(result=result)/1024**3:.3f} Gb")
+
+    if verbose:
+        for element in result["artifacts"]:
+            _id = element["id"]
+            echo(f"... Artifact '{_id}':")
+            echo(element)
+
+    if delete:
+        echo("*** DELETE ARTIFACTS")
+        for element in result["artifacts"]:
+            _id = element["id"]
+            echo(f"--> DELETE {_id}")
+            delete_artifact(owner, repo, _id)
+
+
+if __name__ == "__main__":
+    app()
